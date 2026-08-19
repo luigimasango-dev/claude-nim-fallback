@@ -1,0 +1,112 @@
+model_list:
+  # DEFAULT (set 2026-08-14): Nemotron 3.5 Lightning 30B-A3B — NVIDIA's own
+  # small-MoE reasoning model with thinking mode. Faster than Ultra/Super,
+  # run at high reasoning (budget 16384). NVIDIA-hosted, so the openai/nvidia
+  # provider + /v1/responses routing works the same as the other nemotrons.
+  - model_name: nim-nemotron-lightning-30b
+    litellm_params:
+      model: openai/nvidia/nemotron-3.5-lightning-30b-a3b
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+      extra_body:
+        chat_template_kwargs: { enable_thinking: true }
+        reasoning_budget: 16384
+
+  # Large free reasoning model with thinking mode, good for
+  # complex/agentic work when you've hit your Claude limit mid-task.
+  - model_name: nim-nemotron-ultra-550b
+    litellm_params:
+      model: openai/nvidia/nemotron-3-ultra-550b-a55b
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+      extra_body:
+        chat_template_kwargs: { enable_thinking: true }
+        reasoning_budget: 16384
+
+  # Mid-size Nemotron reasoning model - faster than Ultra-550b, still thinks.
+  # Luigi's field note (2026-08-01): noticeably smaller context window than
+  # Ultra-550b in practice - fine for short/bounded tasks, struggles once a
+  # session accumulates much file/tool-output history. Prefer Ultra-550b for
+  # anything with a long back-and-forth.
+  - model_name: nim-nemotron-super-120b
+    litellm_params:
+      model: openai/nvidia/nemotron-3-super-120b-a12b
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+      extra_body:
+        chat_template_kwargs: { enable_thinking: true }
+        reasoning_budget: 16384
+
+  # KNOWN BROKEN (2026-08-01): every request 404s at /v1/responses. LiteLLM
+  # routes Anthropic-format requests through OpenAI's Responses API, and
+  # NVIDIA only exposes that endpoint for its own Nemotron models on NIM,
+  # not third-party-hosted ones like this. Use nim-nemotron-* instead until
+  # NVIDIA adds Responses-API support for GLM, or this gets a router fix.
+  - model_name: nim-glm-5.2
+    litellm_params:
+      model: openai/z-ai/glm-5.2
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+
+  # Faster, lighter general-purpose free model, good at code and tool-use.
+  - model_name: nim-llama3.3-70b
+    litellm_params:
+      model: openai/meta/llama-3.3-70b-instruct
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+
+  # Largest free general model - slower, sometimes higher quality reasoning.
+  - model_name: nim-llama3.1-405b
+    litellm_params:
+      model: openai/meta/llama-3.1-405b-instruct
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+
+  # Coding-focused model.
+  - model_name: nim-qwen-coder-32b
+    litellm_params:
+      model: openai/qwen/qwen2.5-coder-32b-instruct
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+
+  # Strong reasoning model, slower, good for planning-heavy tasks.
+  - model_name: nim-deepseek-r1
+    litellm_params:
+      model: openai/deepseek-ai/deepseek-r1
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      api_base: https://integrate.api.nvidia.com/v1
+
+  # The same model OpenCode uses as its standing heavy-work delegate, now
+  # hosted on NIM (confirmed present in /v1/models on 2026-08-14). Fast, good
+  # at code and tool-use, and already a known quantity from that workflow.
+  #
+  # CAVEAT worth reading before blaming a typo: this is a THIRD-PARTY-hosted
+  # model on NIM, not an NVIDIA one. The nim-glm-5.2 entry above 404s for
+  # exactly that reason — LiteLLM routes Anthropic-format requests through
+  # OpenAI's Responses API, and NVIDIA exposes that endpoint only for its own
+  # Nemotron models. If this entry also 404s at /v1/responses, it is the same
+  # fault, not a config error. Fall back to nim-nemotron-* , or just use
+  # OpenCode, which talks to this model directly and skips the Anthropic
+  # translation entirely.
+  - model_name: nim-deepseek-v4-flash
+    litellm_params:
+      # nvidia_nim/ — NOT openai/. The generic openai provider makes LiteLLM
+      # translate Anthropic-format requests via OpenAI's Responses API
+      # (/v1/responses), and NVIDIA exposes that endpoint ONLY for its own
+      # Nemotron models. Verified 2026-08-14: /v1/responses returns 404 for
+      # deepseek and 200 for nemotron. The native provider routes through
+      # /v1/chat/completions, which every NIM-hosted model supports.
+      model: nvidia_nim/deepseek-ai/deepseek-v4-flash-0731
+      # Literal, NOT os.environ/... — the native nvidia_nim provider does not
+      # resolve LiteLLM's os.environ/ indirection the way the generic openai
+      # provider does, and fails with "Missing credentials" even when the
+      # variable is set in the process. _EnsureProxy.ps1 substitutes the real
+      # key here at startup from .env, so the key is never committed.
+      api_key: NIM_KEY_PLACEHOLDER
+      api_base: https://integrate.api.nvidia.com/v1
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
