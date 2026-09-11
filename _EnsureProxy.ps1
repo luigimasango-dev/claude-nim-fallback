@@ -64,9 +64,87 @@ if (-not (Test-ProxyUp)) {
     # commit a key, config.yaml carries NIM_KEY_PLACEHOLDER and we write a
     # resolved copy to logs\ for the proxy to read.
     $runtimeConfig = Join-Path $root "logs\config.runtime.yaml"
-    (Get-Content (Join-Path $root "config.yaml") -Raw).
-        Replace('NIM_KEY_PLACEHOLDER', $env:NVIDIA_NIM_API_KEY) |
-        Set-Content -Path $runtimeConfig -Encoding utf8
+    $cfgText = (Get-Content (Join-Path $root "config.yaml") -Raw).
+        Replace('NIM_KEY_PLACEHOLDER', $env:NVIDIA_NIM_API_KEY)
+
+    # --- uncensored backends (added 2026-08-24) --------------------------
+    # The two nim-uncensored-* entries do not live on NIM. Their endpoints
+    # come from the uncensored-llm MCP server's own config, because the
+    # self-hosted one is a cloudflared tunnel whose URL changes on every
+    # Kaggle restart — baking it into config.yaml would mean editing this
+    # repo every session. Anything still unconfigured has its whole model
+    # block REMOVED, so the proxy never advertises a route that points
+    # nowhere. A missing model is a clear error; a dead route is a confusing
+    # one.
+    $uncensoredRoot = "C:\Users\Luigi Masango\projects\ulc-mcp-suite\uncensored-llm-mcp"
+
+    function Remove-ModelBlock {
+        param([string]$Text, [string]$Name)
+        # Strips from "  - model_name: NAME" up to the next model entry or
+        # the litellm_settings section. Leading comments are left behind;
+        # they are inert.
+        $pattern = '(?ms)^  - model_name: ' + [regex]::Escape($Name) + '\r?\n.*?(?=^  - model_name: |^litellm_settings:)'
+        return [regex]::Replace($Text, $pattern, '')
+    }
+
+    # selfhost — from endpoint_state.json, written by set_selfhost_endpoint()
+    $stateFile = Join-Path $uncensoredRoot "endpoint_state.json"
+    $selfhostOk = $false
+    if (Test-Path $stateFile) {
+        try {
+            $state = Get-Content $stateFile -Raw | ConvertFrom-Json
+            if ($state.url) {
+                $selfModel = $state.model
+                if (-not $selfModel) { $selfModel = "local-model" }
+                $selfKey = $state.api_key
+                if (-not $selfKey) { $selfKey = "no-key-set" }
+                $cfgText = $cfgText.
+                    Replace('UNCENSORED_SELFHOST_URL_PLACEHOLDER', $state.url).
+                    Replace('UNCENSORED_SELFHOST_KEY_PLACEHOLDER', $selfKey).
+                    Replace('UNCENSORED_SELFHOST_MODEL_PLACEHOLDER', $selfModel)
+                $selfhostOk = $true
+                Write-Host "Uncensored selfhost endpoint found: $($state.url)"
+            }
+        } catch {
+            Write-Warning "endpoint_state.json is unreadable - skipping nim-uncensored-selfhost."
+        }
+    }
+    if (-not $selfhostOk) { $cfgText = Remove-ModelBlock -Text $cfgText -Name 'nim-uncensored-selfhost' }
+
+    # hosted — from the MCP server's .env (ABLITERATION_*)
+    $uncEnv = Join-Path $uncensoredRoot ".env"
+    $hostedOk = $false
+    if (Test-Path $uncEnv) {
+        $vals = @{}
+        Get-Content $uncEnv | ForEach-Object {
+            if ($_ -match '^\s*#' -or $_ -notmatch '=') { return }
+            $k, $v = $_.Split('=', 2)
+            $vals[$k.Trim()] = $v.Trim()
+        }
+        if ($vals['ABLITERATION_BASE_URL'] -and $vals['ABLITERATION_API_KEY']) {
+            $hostedModel = $vals['ABLITERATION_MODEL']
+            if (-not $hostedModel) { $hostedModel = "abliterated-model" }
+            $cfgText = $cfgText.
+                Replace('UNCENSORED_HOSTED_URL_PLACEHOLDER', $vals['ABLITERATION_BASE_URL']).
+                Replace('UNCENSORED_HOSTED_KEY_PLACEHOLDER', $vals['ABLITERATION_API_KEY']).
+                Replace('UNCENSORED_HOSTED_MODEL_PLACEHOLDER', $hostedModel)
+            $hostedOk = $true
+            Write-Host "Uncensored hosted endpoint found: $($vals['ABLITERATION_BASE_URL'])"
+        }
+    }
+    if (-not $hostedOk) { $cfgText = Remove-ModelBlock -Text $cfgText -Name 'nim-uncensored-hosted' }
+
+    # Fail loudly rather than starting a proxy that cannot serve what was asked.
+    if ($Model -eq 'nim-uncensored-selfhost' -and -not $selfhostOk) {
+        Write-Error "No self-hosted uncensored endpoint is registered. Run the Kaggle notebook at $uncensoredRoot\kaggle\serve_uncensored.py and register the URL it prints via the uncensored-llm MCP tool set_selfhost_endpoint."
+        exit 1
+    }
+    if ($Model -eq 'nim-uncensored-hosted' -and -not $hostedOk) {
+        Write-Error "abliteration.ai is not configured. Set ABLITERATION_BASE_URL and ABLITERATION_API_KEY in $uncEnv (see .env.example there)."
+        exit 1
+    }
+
+    $cfgText | Set-Content -Path $runtimeConfig -Encoding utf8
 
     $proc = Start-Process -FilePath $litellmExe `
         -ArgumentList @("--config", $runtimeConfig, "--port", "$Port") `

@@ -105,6 +105,65 @@ model_list:
       api_key: NIM_KEY_PLACEHOLDER
       api_base: https://integrate.api.nvidia.com/v1
 
+  # ---------------------------------------------------------------------
+  # UNCENSORED / ABLITERATED BACKENDS (added 2026-08-24)
+  # ---------------------------------------------------------------------
+  # NOT on NVIDIA NIM. These point at the two backends built for the
+  # `uncensored-llm` MCP server, reusing this proxy so a whole Claude Code
+  # session can run against an abliterated model rather than one call at a
+  # time. See:
+  #   C:\Users\Luigi Masango\projects\ulc-mcp-suite\uncensored-llm-mcp
+  #
+  # TOOL USE — corrected 2026-08-24 after an initial wrong call here.
+  # Abliteration does NOT degrade tool calling, function calling, or
+  # structured output; capability preservation is precisely what the KL
+  # divergence figure measures, and Heretic optimises for it directly.
+  # Gemma 4 also ships native function calling trained in from scratch
+  # (6 special tokens, tokenizer parses OpenAI-format JSON Schema natively).
+  # So these are usable agentically.
+  #
+  # The real dependency is PLUMBING, not the weights: llama-server must be
+  # started with --jinja so it uses the model's own chat template. Without
+  # it the server falls back to a generic template and tool calls break.
+  # kaggle/serve_uncensored.py passes it. Known upstream llama.cpp bug worth
+  # recognising rather than debugging blind: the tool-call grammar generator
+  # fails on nested string properties in a schema.
+  #
+  # PROVIDER PREFIX — the landmine documented on nim-deepseek-v4-flash
+  # applies here too. `openai/` makes LiteLLM translate Anthropic-format
+  # requests through OpenAI's Responses API (/v1/responses), which neither
+  # llama.cpp nor abliteration.ai implements. `openai_like/` is the provider
+  # meant for OpenAI-compatible-but-not-OpenAI servers and routes to
+  # /v1/chat/completions, which both do implement.
+  # UNTESTED as of 2026-08-24 (no backend was live at build time). If these
+  # 404 at /v1/responses anyway, that is this same fault — try `hosted_vllm/`
+  # next rather than rewriting.
+
+  # Self-hosted llama.cpp on a free Kaggle T4, via cloudflared tunnel.
+  # URL/key/model are substituted at startup by _EnsureProxy.ps1 from
+  # uncensored-llm-mcp\endpoint_state.json, because the tunnel URL changes
+  # every time the Kaggle session restarts. If no endpoint is registered,
+  # _EnsureProxy drops this entry rather than starting a proxy pointing
+  # nowhere.
+  - model_name: nim-uncensored-selfhost
+    litellm_params:
+      model: openai_like/UNCENSORED_SELFHOST_MODEL_PLACEHOLDER
+      api_key: UNCENSORED_SELFHOST_KEY_PLACEHOLDER
+      api_base: UNCENSORED_SELFHOST_URL_PLACEHOLDER
+
+  # abliteration.ai hosted free tier. Substituted at startup from
+  # uncensored-llm-mcp\.env (ABLITERATION_*). Dropped if unconfigured.
+  #
+  # PRIVACY: third party, no DPA, and zero-retention is a marketing claim
+  # rather than an audited control. Never run a session on this against
+  # client data, personal information, or anything with POPIA exposure —
+  # that is what the selfhost entry above is for.
+  - model_name: nim-uncensored-hosted
+    litellm_params:
+      model: openai_like/UNCENSORED_HOSTED_MODEL_PLACEHOLDER
+      api_key: UNCENSORED_HOSTED_KEY_PLACEHOLDER
+      api_base: UNCENSORED_HOSTED_URL_PLACEHOLDER
+
 litellm_settings:
   drop_params: true
 
