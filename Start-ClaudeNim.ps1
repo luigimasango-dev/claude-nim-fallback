@@ -27,11 +27,30 @@ $env:ANTHROPIC_AUTH_TOKEN = $env:LITELLM_MASTER_KEY
 Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "=============================================================" -ForegroundColor Yellow
-Write-Host " RUNNING ON NVIDIA NIM FALLBACK ($Model) - THIS IS NOT CLAUDE" -ForegroundColor Yellow
-Write-Host " Mechanical/scratch work only. No ULC client work, no trading" -ForegroundColor Yellow
-Write-Host " decisions, no compliance judgment calls on this session." -ForegroundColor Yellow
-Write-Host "=============================================================" -ForegroundColor Yellow
+if ($Model -like 'nim-uncensored-*') {
+    Write-Host "=============================================================" -ForegroundColor Red
+    Write-Host " RUNNING ON AN ABLITERATED MODEL ($Model)" -ForegroundColor Red
+    Write-Host " THIS IS NOT CLAUDE. Safety behaviour has been surgically" -ForegroundColor Red
+    Write-Host " removed from these weights - it will not refuse, and it" -ForegroundColor Red
+    Write-Host " will not push back on a bad idea." -ForegroundColor Red
+    Write-Host ""
+    Write-Host " Tool use IS supported (Gemma 4 has native function calling," -ForegroundColor Red
+    Write-Host " and abliteration does not degrade it) - but it depends on" -ForegroundColor Red
+    Write-Host " llama-server running with --jinja. If tool calls come back" -ForegroundColor Red
+    Write-Host " malformed, check that flag before blaming the model." -ForegroundColor Red
+    if ($Model -eq 'nim-uncensored-hosted') {
+        Write-Host ""
+        Write-Host " BACKEND IS A THIRD PARTY (abliteration.ai). No DPA." -ForegroundColor Red
+        Write-Host " No client data, no personal info, nothing POPIA-covered." -ForegroundColor Red
+    }
+    Write-Host "=============================================================" -ForegroundColor Red
+} else {
+    Write-Host "=============================================================" -ForegroundColor Yellow
+    Write-Host " RUNNING ON NVIDIA NIM FALLBACK ($Model) - THIS IS NOT CLAUDE" -ForegroundColor Yellow
+    Write-Host " Mechanical/scratch work only. No ULC client work, no trading" -ForegroundColor Yellow
+    Write-Host " decisions, no compliance judgment calls on this session." -ForegroundColor Yellow
+    Write-Host "=============================================================" -ForegroundColor Yellow
+}
 Write-Host ""
 
 claude --model $Model
