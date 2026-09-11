@@ -1,11 +1,20 @@
 # claude-nim-fallback
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+![Test-NimProxy smoke test passing](docs/demo.png)
+
 Local bridge that lets you keep using the Claude Code CLI when you've hit
 your normal Claude usage limit, by routing it through free NVIDIA NIM models
 instead. Claude Code only speaks Anthropic's Messages API format; NVIDIA NIM
 is OpenAI-compatible. A local [LiteLLM](https://github.com/BerriAI/litellm)
 proxy translates between the two, so nothing about Claude Code itself
 changes - you just point it at `http://127.0.0.1:4000` instead of Anthropic.
+
+> **Status: maintained, not superseded.** Verified working 2026-09-11
+> (`Test-NimProxy.ps1` passes against the live proxy). OpenCode covers a
+> different lane; this repo is for the Claude Code CLI hitting its usage
+> limit, which still happens.
 
 **This is not Claude.** It's free third-party models (Nemotron, Llama, Qwen,
 DeepSeek, GLM) wearing Claude Code's interface. Tool-use reliability,
@@ -60,6 +69,26 @@ Available `-Model` values (edit `config.yaml` to add more from the
 | `nim-llama3.1-405b` | meta/llama-3.1-405b-instruct | Untested |
 | `nim-qwen-coder-32b` | qwen/qwen2.5-coder-32b-instruct | Untested |
 | `nim-deepseek-r1` | deepseek-ai/deepseek-r1 | Untested - may hit the same Responses-API 404 as GLM since it's also third-party-hosted, not NVIDIA's own model |
+| `nim-uncensored-selfhost` | your Kaggle T4 via cloudflared | **Not NIM.** Abliterated model on your own GPU. Endpoint read at startup from the `uncensored-llm` MCP server's `endpoint_state.json`; the entry is dropped if nothing is registered. Untested as of 2026-08-24. |
+| `nim-uncensored-hosted` | abliteration.ai free tier | **Not NIM, and a third party.** Read from that MCP server's `.env`. No DPA - never send client data, personal info, or anything POPIA-covered. Untested as of 2026-08-24. |
+
+### About the two uncensored entries
+
+They exist so a whole Claude Code session can run against an abliterated
+model rather than one MCP call at a time. Built 2026-08-24 alongside the
+`uncensored-llm-mcp` project in `projects/ulc-mcp-suite/`.
+
+**Tool use works.** Abliteration does not degrade tool calling, function
+calling, or structured output - capability preservation is exactly what the
+KL-divergence figure measures - and Gemma 4 ships native function calling
+trained in from scratch. What it depends on is `llama-server` running with
+`--jinja`; the Kaggle notebook passes it. If tool calls come back malformed,
+check that flag before blaming the weights.
+
+**You may not need this proxy at all.** Recent `llama-server` speaks the
+Anthropic Messages API directly, so pointing `ANTHROPIC_BASE_URL` at the
+tunnel works with no LiteLLM in the path. Use these entries when you want one
+place to switch between the NIM models and the uncensored ones.
 
 The proxy keeps running in the background across sessions (hidden process,
 logs in `logs\`). Stop it when you're done to free the port / avoid it
@@ -102,3 +131,18 @@ those vars into a shell yourself, `Remove-Item Env:\ANTHROPIC_BASE_URL` /
 - This is a community pattern (LiteLLM's Anthropic-format pass-through), not
   an Anthropic-supported feature. If a Claude Code update changes how it
   talks to gateways, this may need adjustment.
+
+## Development
+
+```powershell
+.\Test-NimProxy.ps1
+```
+
+Non-interactive smoke test: starts the proxy if needed and checks it
+bridges Anthropic format to NVIDIA NIM. Needs the real API key in `.env`
+(a live call, not a mock), so there is no CI workflow — this script is the
+check. Verified passing 2026-09-11.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
